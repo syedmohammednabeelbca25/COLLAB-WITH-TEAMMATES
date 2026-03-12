@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mythical Creatures of the World</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+:root {
+  --gold: #c8912a;
+  --gold-dim: rgba(200,145,42,0.3);
+  --ember: #e85d20;
+  --parchment: #ede0c4;
+  --aged: #b9a07a;
+  --deep: #0c0906;
+  --panel-bg: #110d08;
+  --land: #253618;
+  --land-hover: #6b2610;
+  --land-active: #8b3218;
+  --border-col: #3d5228;
+  --sea-dark: #060e18;
+  --sea-mid: #0d1e32;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;background:var(--deep);font-family:'Crimson Pro',serif;color:var(--parchment);overflow:hidden;}
+
+/* grain */
+body::after{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:9999;opacity:0.7;}
+
+/* ── HEADER ── */
+#header{position:fixed;top:0;left:0;right:0;z-index:200;padding:13px 20px 9px;background:linear-gradient(to bottom,rgba(12,9,6,0.98) 60%,transparent);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:3px;}
+#header h1{font-family:'Cinzel Decorative',serif;font-size:clamp(0.85rem,2vw,1.6rem);color:var(--gold);letter-spacing:0.14em;text-shadow:0 0 40px rgba(200,145,42,0.5),0 2px 6px rgba(0,0,0,0.9);}
+#header p{font-size:0.75rem;color:var(--aged);font-style:italic;letter-spacing:0.06em;}
+.rule{display:flex;align-items:center;gap:10px;width:100%;max-width:460px;margin-top:4px;}
+.rule-line{flex:1;height:1px;background:linear-gradient(to right,transparent,var(--gold),transparent);}
+.rule-gem{width:5px;height:5px;background:var(--gold);transform:rotate(45deg);}
+
+/* ── MAP ── */
+#map-wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
+#map-svg{width:100vw;height:100vh;cursor:grab;}
+#map-svg:active{cursor:grabbing;}
+.country{fill:var(--land);stroke:var(--border-col);stroke-width:0.4;cursor:pointer;transition:fill 0.15s;}
+.country.hovered{fill:var(--land-hover);stroke:var(--gold);stroke-width:0.8;}
+.country.pinned{fill:var(--land-active);stroke:var(--gold);stroke-width:1;}
+.graticule{fill:none;stroke:rgba(255,255,255,0.035);stroke-width:0.5;}
+.sphere-border{fill:none;stroke:rgba(200,145,42,0.18);stroke-width:1;}
+
+/* ── SIDE PANEL (creature list) ── */
+#side-panel{
+  position:fixed;top:0;right:0;bottom:0;
+  width:300px;
+  z-index:300;
+  transform:translateX(100%);
+  transition:transform 0.38s cubic-bezier(0.22,1,0.36,1);
+  display:flex;flex-direction:column;
+  background:linear-gradient(160deg,#1a1208,#0e0a05);
+  border-left:1px solid var(--gold-dim);
+  box-shadow:-12px 0 60px rgba(0,0,0,0.8);
+}
+#side-panel.open{transform:translateX(0);}
+#side-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(to right,transparent,var(--gold),var(--ember),var(--gold),transparent);}
+
+#panel-header{padding:70px 18px 14px;flex-shrink:0;}
+#panel-country{font-family:'Cinzel Decorative',serif;font-size:0.82rem;color:var(--gold);letter-spacing:0.12em;margin-bottom:2px;}
+#panel-sub{font-size:0.72rem;color:var(--aged);font-style:italic;}
+.panel-rule{display:flex;align-items:center;gap:8px;margin:10px 0;}
+.panel-rule-line{flex:1;height:1px;background:linear-gradient(to right,transparent,rgba(200,145,42,0.4),transparent);}
+.panel-rule-text{font-size:0.56rem;color:var(--aged);letter-spacing:0.16em;text-transform:uppercase;white-space:nowrap;}
+
+#panel-close{
+  position:absolute;top:62px;right:14px;
+  width:26px;height:26px;
+  background:rgba(200,145,42,0.08);
+  border:1px solid var(--gold-dim);
+  color:var(--aged);font-size:0.9rem;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all 0.2s;font-family:serif;
+}
+#panel-close:hover{color:var(--gold);border-color:var(--gold);background:rgba(200,145,42,0.15);}
+
+#creature-list-wrap{flex:1;overflow-y:auto;padding:0 10px 20px;}
+#creature-list-wrap::-webkit-scrollbar{width:4px;}
+#creature-list-wrap::-webkit-scrollbar-track{background:transparent;}
+#creature-list-wrap::-webkit-scrollbar-thumb{background:var(--gold-dim);border-radius:2px;}
+
+.creature-btn{
+  display:flex;align-items:center;gap:10px;
+  width:100%;padding:8px 10px;
+  background:transparent;border:none;border-bottom:1px solid rgba(200,145,42,0.08);
+  cursor:pointer;text-align:left;
+  transition:background 0.15s;
+  animation:fadeIn 0.3s ease both;
+}
+.creature-btn:hover{background:rgba(200,145,42,0.07);}
+.creature-btn.selected{background:rgba(200,145,42,0.12);border-bottom-color:rgba(200,145,42,0.2);}
+.creature-btn:last-child{border-bottom:none;}
+@keyframes fadeIn{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}
+
+.cb-num{font-family:'Cinzel Decorative',serif;font-size:0.55rem;color:var(--gold);opacity:0.5;min-width:18px;flex-shrink:0;}
+.cb-info{flex:1;min-width:0;}
+.cb-name{font-size:0.82rem;color:var(--parchment);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cb-type{font-size:0.68rem;color:var(--aged);font-style:italic;}
+.cb-arrow{color:var(--gold-dim);font-size:0.7rem;flex-shrink:0;transition:color 0.15s;}
+.creature-btn:hover .cb-arrow,.creature-btn.selected .cb-arrow{color:var(--gold);}
+
+/* loading dots in panel */
+.ldots{display:flex;justify-content:center;gap:5px;padding:24px 0;}
+.ldots span{width:5px;height:5px;border-radius:50%;background:var(--gold);animation:dp 1.2s ease-in-out infinite;}
+.ldots span:nth-child(2){animation-delay:.2s;}
+.ldots span:nth-child(3){animation-delay:.4s;}
+@keyframes dp{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+
+/* ── DOSSIER PANEL ── */
+#dossier{
+  position:fixed;top:0;left:0;bottom:0;
+  width:340px;z-index:300;
+  transform:translateX(-100%);
+  transition:transform 0.38s cubic-bezier(0.22,1,0.36,1);
+  background:linear-gradient(160deg,#1c1208,#100b05);
+  border-right:1px solid var(--gold-dim);
+  box-shadow:12px 0 60px rgba(0,0,0,0.8);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+#dossier.open{transform:translateX(0);}
+#dossier::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(to right,transparent,var(--ember),var(--gold),var(--ember),transparent);}
+
+#dossier-close{
+  position:absolute;top:62px;left:14px;
+  width:26px;height:26px;
+  background:rgba(200,145,42,0.08);
+  border:1px solid var(--gold-dim);
+  color:var(--aged);font-size:0.9rem;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all 0.2s;font-family:serif;
+}
+#dossier-close:hover{color:var(--gold);border-color:var(--gold);background:rgba(200,145,42,0.15);}
+
+#dossier-scroll{flex:1;overflow-y:auto;padding:70px 20px 30px;}
+#dossier-scroll::-webkit-scrollbar{width:3px;}
+#dossier-scroll::-webkit-scrollbar-thumb{background:var(--gold-dim);}
+
+/* dossier header */
+.d-sigil{
+  text-align:center;margin-bottom:14px;
+  font-size:2.2rem;line-height:1;
+  text-shadow:0 0 30px rgba(200,145,42,0.5);
+  animation:sigil-in 0.5s ease both;
+}
+@keyframes sigil-in{from{opacity:0;transform:scale(0.7)}to{opacity:1;transform:scale(1)}}
+
+.d-name{
+  font-family:'Cinzel Decorative',serif;
+  font-size:0.95rem;color:var(--gold);
+  letter-spacing:0.1em;text-align:center;
+  margin-bottom:3px;
+  text-shadow:0 0 20px rgba(200,145,42,0.3);
+}
+.d-type{
+  font-size:0.75rem;color:var(--aged);font-style:italic;
+  text-align:center;letter-spacing:0.06em;margin-bottom:14px;
+}
+.d-origin-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  background:rgba(200,145,42,0.08);
+  border:1px solid var(--gold-dim);
+  padding:3px 10px;border-radius:1px;
+  font-size:0.65rem;color:var(--aged);letter-spacing:0.1em;text-transform:uppercase;
+  margin:0 auto 16px;display:flex;justify-content:center;
+}
+
+/* stat bars */
+.d-stats{margin-bottom:18px;}
+.stat-row{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.stat-label{font-size:0.65rem;color:var(--aged);letter-spacing:0.08em;text-transform:uppercase;width:72px;flex-shrink:0;}
+.stat-bar-wrap{flex:1;height:5px;background:rgba(255,255,255,0.06);border-radius:0;}
+.stat-bar{height:100%;background:linear-gradient(to right,var(--ember),var(--gold));border-radius:0;transition:width 0.8s cubic-bezier(0.22,1,0.36,1);width:0;}
+.stat-val{font-size:0.65rem;color:var(--gold);width:22px;text-align:right;flex-shrink:0;}
+
+/* dossier sections */
+.d-section{margin-bottom:16px;}
+.d-section-title{
+  font-family:'Cinzel Decorative',serif;
+  font-size:0.6rem;color:var(--gold);
+  letter-spacing:0.18em;text-transform:uppercase;
+  margin-bottom:7px;
+  display:flex;align-items:center;gap:8px;
+}
+.d-section-title::after{content:'';flex:1;height:1px;background:linear-gradient(to right,var(--gold-dim),transparent);}
+.d-text{font-size:0.8rem;color:var(--parchment);line-height:1.65;font-weight:300;}
+
+/* abilities tags */
+.ability-tags{display:flex;flex-wrap:wrap;gap:5px;}
+.ability-tag{
+  font-size:0.65rem;color:var(--aged);font-style:italic;
+  border:1px solid rgba(200,145,42,0.22);
+  padding:2px 8px;
+  background:rgba(200,145,42,0.05);
+}
+
+/* weakness / strength chips */
+.chip-row{display:flex;flex-wrap:wrap;gap:4px;}
+.chip{font-size:0.63rem;padding:2px 7px;border:1px solid;font-style:italic;}
+.chip.w{color:#c47060;border-color:rgba(196,112,96,0.35);background:rgba(196,112,96,0.06);}
+.chip.s{color:#6aab72;border-color:rgba(106,171,114,0.35);background:rgba(106,171,114,0.06);}
+
+/* threat meter */
+.threat-wrap{display:flex;align-items:center;gap:10px;margin-top:4px;}
+.threat-skulls{display:flex;gap:3px;}
+.skull{font-size:0.9rem;opacity:0.2;transition:opacity 0.3s;}
+.skull.lit{opacity:1;}
+.threat-label{font-size:0.7rem;color:var(--aged);font-style:italic;}
+
+/* quote */
+.d-quote{
+  font-style:italic;font-size:0.78rem;color:var(--aged);
+  line-height:1.7;padding:10px 14px;
+  border-left:2px solid var(--gold-dim);
+  background:rgba(200,145,42,0.04);
+  margin-bottom:16px;
+}
+
+/* ── ZOOM CONTROLS ── */
+#zoom-controls{position:fixed;bottom:56px;right:310px;z-index:400;display:flex;flex-direction:column;gap:4px;transition:right 0.38s cubic-bezier(0.22,1,0.36,1);}
+#zoom-controls.panel-open{right:310px;}
+.zoom-btn{width:30px;height:30px;background:rgba(14,11,7,0.92);border:1px solid var(--gold-dim);color:var(--gold);font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;}
+.zoom-btn:hover{background:rgba(200,145,42,0.15);border-color:var(--gold);}
+#reset-btn{position:fixed;bottom:56px;left:20px;z-index:400;padding:5px 12px;background:rgba(14,11,7,0.92);border:1px solid var(--gold-dim);color:var(--aged);font-family:'Crimson Pro',serif;font-size:0.73rem;font-style:italic;cursor:pointer;transition:all 0.2s;}
+#reset-btn:hover{color:var(--gold);border-color:var(--gold);}
+
+/* ── LOADING SPLASH ── */
+#splash{position:fixed;inset:0;z-index:1000;background:var(--deep);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;transition:opacity 0.9s ease;}
+#splash.gone{opacity:0;pointer-events:none;}
+#splash h2{font-family:'Cinzel Decorative',serif;color:var(--gold);font-size:1.1rem;letter-spacing:0.15em;}
+#splash p{color:var(--aged);font-style:italic;font-size:0.85rem;}
+
+/* ── FOOTER ── */
+#footer{position:fixed;bottom:0;left:0;right:0;z-index:100;text-align:center;padding:7px;font-size:0.65rem;color:rgba(185,160,122,0.3);font-style:italic;letter-spacing:0.07em;background:linear-gradient(to top,rgba(12,9,6,0.9),transparent);pointer-events:none;}
+
+/* vignette */
+#vignette{position:fixed;inset:0;z-index:50;pointer-events:none;background:radial-gradient(ellipse at 50% 55%,transparent 40%,rgba(0,0,0,0.6) 100%);}
+
+/* pin hint */
+#pin-hint{position:fixed;bottom:56px;left:50%;transform:translateX(-50%);z-index:200;font-size:0.7rem;color:var(--aged);font-style:italic;letter-spacing:0.06em;background:rgba(12,9,6,0.85);padding:5px 14px;border:1px solid var(--gold-dim);opacity:0;transition:opacity 0.5s;pointer-events:none;}
+#pin-hint.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<div id="splash">
+  <h2>⸸ Unrolling the Ancient Map ⸸</h2>
+  <p>Summoning the nations of the world…</p>
+  <div class="ldots"><span></span><span></span><span></span></div>
+</div>
+
+<div id="vignette"></div>
+
+<div id="header">
+  <h1>⸸ Mythical Creatures of the World ⸸</h1>
+  <p>Hover a country · Click to pin · Select a creature to read its dossier</p>
+  <div class="rule"><div class="rule-line"></div><div class="rule-gem"></div><div class="rule-line"></div></div>
+</div>
+
+<div id="map-wrap"><svg id="map-svg"></svg></div>
+
+<!-- Side panel: creature list -->
+<div id="side-panel">
+  <button id="panel-close">✕</button>
+  <div id="panel-header">
+    <div id="panel-country">Country</div>
+    <div id="panel-sub">Legendary inhabitants</div>
+    <div class="panel-rule">
+      <div class="panel-rule-line"></div>
+      <span class="panel-rule-text">Legendary Beings</span>
+      <div class="panel-rule-line"></div>
+    </div>
+  </div>
+  <div id="creature-list-wrap">
+    <div class="ldots" id="list-loading"><span></span><span></span><span></span></div>
+  </div>
+</div>
+
+<!-- Dossier panel: creature detail -->
+<div id="dossier">
+  <button id="dossier-close">←</button>
+  <div id="dossier-scroll">
+    <div class="ldots" id="dos-loading" style="display:none"><span></span><span></span><span></span></div>
+    <div id="dossier-content"></div>
+  </div>
+</div>
+
+<div id="zoom-controls">
+  <button class="zoom-btn" id="zi">+</button>
+  <button class="zoom-btn" id="zo">−</button>
+</div>
+<button id="reset-btn">⟲ Reset</button>
+<div id="pin-hint">Click country to pin panel</div>
+<div id="footer">An atlas of the unseen — drawn from the world's oldest stories</div>
+
+<script>
+// ── LOCAL CREATURE DATA ───────────────────────────────────────────────────────
+const LOCAL = {
+  "Japan":[{name:"Kitsune",type:"Fox spirit"},{name:"Tengu",type:"Mountain demon"},{name:"Oni",type:"Ogre demon"},{name:"Kappa",type:"Water imp"},{name:"Tanuki",type:"Shapeshifter"},{name:"Yuki-onna",type:"Snow woman"},{name:"Ryū",type:"Dragon"},{name:"Gashadokuro",type:"Giant skeleton"},{name:"Nurikabe",type:"Wall spirit"},{name:"Raijū",type:"Lightning beast"}],
+  "China":[{name:"Long Dragon",type:"Divine serpent"},{name:"Qilin",type:"Chimeric omen"},{name:"Fenghuang",type:"Immortal phoenix"},{name:"Jiangshi",type:"Hopping vampire"},{name:"Pixiu",type:"Fortune lion"},{name:"Bai Ze",type:"All-knowing beast"},{name:"Hundun",type:"Primordial chaos"},{name:"Taotie",type:"Glutton mask"},{name:"Nüwa",type:"Serpent goddess"},{name:"Xiangliu",type:"Nine-headed snake"}],
+  "Greece":[{name:"Minotaur",type:"Bull-man"},{name:"Medusa",type:"Gorgon"},{name:"Hydra",type:"Multi-headed serpent"},{name:"Chimera",type:"Fire-breathing hybrid"},{name:"Centaur",type:"Half-horse"},{name:"Cyclops",type:"One-eyed giant"},{name:"Sphinx",type:"Riddler"},{name:"Pegasus",type:"Winged horse"},{name:"Cerberus",type:"Hellhound"},{name:"Harpy",type:"Wind spirit"}],
+  "India":[{name:"Nāga",type:"Serpent deity"},{name:"Garuda",type:"Divine eagle"},{name:"Rakshasa",type:"Shape-shifting demon"},{name:"Apsara",type:"Celestial dancer"},{name:"Gandharva",type:"Sky musician"},{name:"Yali",type:"Temple guardian"},{name:"Makara",type:"Sea creature"},{name:"Vetala",type:"Corpse spirit"},{name:"Yaksha",type:"Nature spirit"},{name:"Kinnara",type:"Half-bird person"}],
+  "Norway":[{name:"Draugr",type:"Undead warrior"},{name:"Kraken",type:"Sea titan"},{name:"Jörmungandr",type:"World serpent"},{name:"Fenrir",type:"Chaos wolf"},{name:"Huldra",type:"Forest seductress"},{name:"Nøkk",type:"Water shapeshifter"},{name:"Fossegrim",type:"Waterfall fiddler"},{name:"Stallo",type:"Troll giant"},{name:"Mare",type:"Dream demon"},{name:"Lindworm",type:"Limbless dragon"}],
+  "Ireland":[{name:"Banshee",type:"Death wail"},{name:"Leprechaun",type:"Fairy cobbler"},{name:"Selkie",type:"Seal-person"},{name:"Puca",type:"Shapeshifter"},{name:"Dullahan",type:"Headless rider"},{name:"Changeling",type:"Fairy swap"},{name:"Cú Sídhe",type:"Fairy hound"},{name:"Merrow",type:"Irish mermaid"},{name:"Abhartach",type:"Blood-drinking dwarf"},{name:"Fomorians",type:"Ancient demons"}],
+  "Egypt":[{name:"Ammit",type:"Soul devourer"},{name:"Apep",type:"Chaos serpent"},{name:"Bennu",type:"Sacred heron"},{name:"Medjed",type:"Shrouded god"},{name:"Sphinx",type:"Divine guardian"},{name:"Ba-bird",type:"Soul bird"},{name:"Serpopard",type:"Leopard-serpent"},{name:"Sekhmet",type:"Lion goddess"},{name:"Sobek",type:"Crocodile god"},{name:"Uraeus",type:"Sacred cobra"}],
+  "Mexico":[{name:"Quetzalcóatl",type:"Feathered serpent"},{name:"Chupacabra",type:"Blood sucker"},{name:"Nahual",type:"Animal shapeshifter"},{name:"Xolotl",type:"Lightning dog"},{name:"Cipactli",type:"Sea monster"},{name:"La Llorona",type:"Weeping ghost"},{name:"Ahuízotl",type:"Water dog"},{name:"Tzitzimitl",type:"Star demon"},{name:"Alux",type:"Mayan dwarf"},{name:"Tezcatlipoca",type:"Smoking mirror"}],
+  "Brazil":[{name:"Boto",type:"Pink dolphin man"},{name:"Curupira",type:"Backwards-footed"},{name:"Mapinguari",type:"Sloth giant"},{name:"Iara",type:"River siren"},{name:"Cuca",type:"Caiman witch"},{name:"Boitatá",type:"Fire serpent"},{name:"Saci-Pererê",type:"One-legged imp"},{name:"Anhangá",type:"Ghost deer"},{name:"Matinta Perera",type:"Witch bird"},{name:"Mula sem Cabeça",type:"Headless mule"}],
+  "Russia":[{name:"Baba Yaga",type:"Forest witch"},{name:"Domovoi",type:"House spirit"},{name:"Rusalka",type:"River maiden"},{name:"Firebird",type:"Magical phoenix"},{name:"Leshy",type:"Forest lord"},{name:"Kikimora",type:"Household demon"},{name:"Vodyanoy",type:"Water spirit"},{name:"Zhar-Ptitsa",type:"Radiant bird"},{name:"Chort",type:"Devil imp"},{name:"Poludnitsa",type:"Noon witch"}],
+  "Germany":[{name:"Lorelei",type:"Rhine siren"},{name:"Krampus",type:"Yuletide demon"},{name:"Wolpertinger",type:"Chimeric beast"},{name:"Erlking",type:"Forest king"},{name:"Nixie",type:"Water spirit"},{name:"Kobold",type:"House goblin"},{name:"Wechselbalg",type:"Changeling"},{name:"Heinzelmann",type:"House gnome"},{name:"Nachzehrer",type:"Plague vampire"},{name:"Wild Huntsman",type:"Storm rider"}],
+  "United Kingdom":[{name:"Green Man",type:"Forest deity"},{name:"Black Shuck",type:"Phantom hound"},{name:"Will-o'-Wisp",type:"Marsh light"},{name:"Hobgoblin",type:"Mischief maker"},{name:"Wyrm",type:"Ancient dragon"},{name:"Boggarts",type:"Household nuisance"},{name:"Robin Goodfellow",type:"Puck fairy"},{name:"Jenny Greenteeth",type:"River hag"},{name:"Woodwose",type:"Wild man"},{name:"Barghest",type:"Ghost dog"}],
+  "Australia":[{name:"Bunyip",type:"Swamp creature"},{name:"Yowie",type:"Aboriginal bigfoot"},{name:"Rainbow Serpent",type:"Creation deity"},{name:"Min Min Light",type:"Ghost light"},{name:"Burrunjor",type:"Giant lizard"},{name:"Quinkin",type:"Rock spirit"},{name:"Muldjewangk",type:"Seaweed monster"},{name:"Mimi",type:"Rock painting spirit"},{name:"Tiddalick",type:"Flood frog"},{name:"Wulgaru",type:"Wooden skeleton"}],
+  "United States of America":[{name:"Wendigo",type:"Cannibalistic spirit"},{name:"Skinwalker",type:"Navajo shapeshifter"},{name:"Jersey Devil",type:"Winged demon"},{name:"Bigfoot",type:"Forest giant"},{name:"Thunderbird",type:"Storm eagle"},{name:"Mothman",type:"Winged omen"},{name:"Jackalope",type:"Horned rabbit"},{name:"Loveland Frog",type:"Frog-man"},{name:"Piasa Bird",type:"Algonquin monster"},{name:"Teakettler",type:"Steam beast"}],
+  "Philippines":[{name:"Manananggal",type:"Torso vampire"},{name:"Aswang",type:"Shapeshifter"},{name:"Tikbalang",type:"Horse-man"},{name:"Kapre",type:"Tree giant"},{name:"Engkanto",type:"Nature spirit"},{name:"Sigbin",type:"Backward calf"},{name:"Nuno sa Punso",type:"Mound dwarf"},{name:"Batibat",type:"Sleep demon"},{name:"Wakwak",type:"Bird demon"},{name:"Dilim",type:"Shadow spirit"}],
+  "Indonesia":[{name:"Leak",type:"Head vampire"},{name:"Pocong",type:"Shroud ghost"},{name:"Kuntilanak",type:"Banyan ghost"},{name:"Wewe Gombel",type:"Child stealer"},{name:"Genderuwo",type:"Tree demon"},{name:"Tuyul",type:"Bald imp"},{name:"Naga",type:"Serpent deity"},{name:"Rangda",type:"Demon queen"},{name:"Barong",type:"Divine lion"},{name:"Jailangkung",type:"Summoning spirit"}],
+  "Thailand":[{name:"Nāga",type:"Sacred serpent"},{name:"Phi Krasue",type:"Floating head"},{name:"Kinnari",type:"Half-bird woman"},{name:"Garuda",type:"Divine eagle"},{name:"Phi Pop",type:"Possession spirit"},{name:"Rakshasa",type:"Demon giant"},{name:"Suvannamaccha",type:"Golden mermaid"},{name:"Phi Tai Hong",type:"Violent ghost"},{name:"Manusya-Naga",type:"Snake-person"},{name:"Yak",type:"Temple guardian"}],
+  "Iran":[{name:"Simurgh",type:"Wise bird"},{name:"Div",type:"Persian demon"},{name:"Peri",type:"Fallen angel"},{name:"Manticore",type:"Man-eating lion"},{name:"Huma",type:"Fortune bird"},{name:"Azhidahaka",type:"Dragon-shouldered king"},{name:"Roc",type:"Giant raptor"},{name:"Bahamut",type:"World fish"},{name:"Gorgon",type:"Bull beast"},{name:"Pazuzu",type:"Wind demon"}],
+  "Nigeria":[{name:"Abiku",type:"Spirit child"},{name:"Àjé",type:"Wealth spirit"},{name:"Emere",type:"Witch child"},{name:"Esu",type:"Trickster god"},{name:"Àgànàgán",type:"Forest dwarf"},{name:"Iwin",type:"Jinn-like spirit"},{name:"Ojuju Calabar",type:"Swamp ghost"},{name:"Ijele",type:"Sacred masquerade"},{name:"Mami Wata",type:"Water spirit"},{name:"Ogbanje",type:"Reincarnating spirit"}],
+  "Ethiopia":[{name:"Adze",type:"Firefly vampire"},{name:"Buda",type:"Evil-eye smith"},{name:"Wak",type:"Sky god"},{name:"Hyena men",type:"Werebeasts"},{name:"Zar",type:"Possessing spirit"},{name:"Qat",type:"Creator deity"},{name:"Aylat",type:"Female spirit"},{name:"Afalit",type:"Forest demon"},{name:"Sagalee",type:"Voice spirit"},{name:"Mullo",type:"Revenant"}],
+  "France":[{name:"Melusine",type:"Serpent fairy"},{name:"Loup-garou",type:"Werewolf"},{name:"Lutins",type:"Fairy imp"},{name:"La Bête du Gévaudan",type:"Mystery beast"},{name:"Drac",type:"River spirit"},{name:"Tarasque",type:"Dragon-turtle"},{name:"Vouivre",type:"Jewel-eyed dragon"},{name:"Korrigans",type:"Breton fairy"},{name:"Matagot",type:"Black cat spirit"},{name:"Fée Carabosse",type:"Evil fairy"}],
+  "Spain":[{name:"Basajaun",type:"Basque wildman"},{name:"Coco",type:"Bogeyman"},{name:"Nuberu",type:"Storm master"},{name:"Trasgu",type:"House goblin"},{name:"Santa Compaña",type:"Ghost procession"},{name:"Anjana",type:"Good fairy"},{name:"Cuélebre",type:"Lake serpent"},{name:"Musgoso",type:"Moss man"},{name:"Amilamia",type:"River spirit"},{name:"Ojáncanu",type:"One-eyed giant"}],
+  "Sweden":[{name:"Tomte",type:"Farm gnome"},{name:"Näcken",type:"Water fiddler"},{name:"Skogsrå",type:"Forest maiden"},{name:"Bäckahästen",type:"Brook horse"},{name:"Ängsälva",type:"Meadow elf"},{name:"Mara",type:"Night demon"},{name:"Myling",type:"Unbaptized child"},{name:"Stoorworm",type:"Sea serpent"},{name:"Vittra",type:"Underground folk"},{name:"Gasten",type:"Shapeshifting ghost"}],
+  "Iceland":[{name:"Huldufólk",type:"Hidden people"},{name:"Grýla",type:"Child-eating giantess"},{name:"Yule Lads",type:"Troll pranksters"},{name:"Skoffín",type:"Fox-cat hybrid"},{name:"Nykur",type:"Grey water horse"},{name:"Útburður",type:"Infant ghost"},{name:"Marbendill",type:"Merman oracle"},{name:"Skuggabaldur",type:"Cat-fox hybrid"},{name:"Lagarfljótsormur",type:"Lake worm"},{name:"Móri",type:"Old ghost"}],
+  "Peru":[{name:"Amaru",type:"Two-headed serpent"},{name:"Ccoa",type:"Lightning cat"},{name:"Pishtaco",type:"Fat-stealing demon"},{name:"Supay",type:"Underworld god"},{name:"Yacumama",type:"River mother"},{name:"Inti",type:"Sun god"},{name:"Mama Qucha",type:"Sea goddess"},{name:"Ukuku",type:"Bear-man"},{name:"Wari",type:"Ancient giant"},{name:"Auca",type:"Wild spirit"}],
+  "South Korea":[{name:"Dokkaebi",type:"Goblin trickster"},{name:"Gumiho",type:"Nine-tailed fox"},{name:"Imoogi",type:"Proto-dragon"},{name:"Haetae",type:"Lion-unicorn"},{name:"Samjokgu",type:"Three-legged dog"},{name:"Bulgasari",type:"Iron eater"},{name:"Gwisin",type:"Vengeful ghost"},{name:"Cheonyeo Gwishin",type:"Maiden spirit"},{name:"Nongsa",type:"River snake"},{name:"Eong Deok",type:"Thumb spirit"}],
+  "Turkey":[{name:"Cin",type:"Turkish jinn"},{name:"Karakoncolos",type:"Winter demon"},{name:"Al Karisi",type:"Birth demon"},{name:"Umay",type:"Mother goddess"},{name:"Simurgh",type:"All-knowing bird"},{name:"Tepegöz",type:"One-eyed ogre"},{name:"Deli Dumrul",type:"Death wrestler"},{name:"Kötü Adam",type:"Evil man spirit"},{name:"Yel Ruhu",type:"Wind soul"},{name:"Alkarisi",type:"Postpartum demon"}],
+  "Argentina":[{name:"El Familiar",type:"Company demon"},{name:"Pombero",type:"Night stalker"},{name:"Mulánima",type:"Wandering soul"},{name:"Coquena",type:"Llama guardian"},{name:"Carbunclo",type:"Jewel-headed beast"},{name:"Ucumar",type:"Forest bear-man"},{name:"Runa-uturungu",type:"Weretiger"},{name:"La Viuda",type:"Widow temptress"},{name:"Kakuy",type:"Cursed bird"},{name:"Curupí",type:"Tree spirit"}],
+  "Colombia":[{name:"Madremonte",type:"Jungle mother"},{name:"El Hombre Caimán",type:"Caiman man"},{name:"La Patasola",type:"One-legged seductress"},{name:"Mohan",type:"River hermit"},{name:"Tunda",type:"Forest spirit"},{name:"Bichito de Luz",type:"Soul insect"},{name:"El Riviel",type:"Swamp beast"},{name:"Candileja",type:"Three-flame witch"},{name:"La Llorona",type:"Weeping ghost"},{name:"Silbón",type:"Whistling skeleton"}],
+  "Poland":[{name:"Strzyga",type:"Two-soul vampire"},{name:"Wila",type:"Forest fairy"},{name:"Leszy",type:"Forest guardian"},{name:"Topielec",type:"Drowned spirit"},{name:"Baba Jaga",type:"Witch crone"},{name:"Zmora",type:"Night hag"},{name:"Południca",type:"Field demon"},{name:"Utopiec",type:"Water undead"},{name:"Borowy",type:"Forest sprite"},{name:"Płanetnik",type:"Storm maker"}],
+  "Romania":[{name:"Strigoi",type:"Vampire revenant"},{name:"Moroi",type:"Living vampire"},{name:"Zână",type:"Fairy spirit"},{name:"Balaur",type:"Multi-headed dragon"},{name:"Solomonar",type:"Weather wizard"},{name:"Iele",type:"Dancing spirit"},{name:"Căpcăun",type:"Dog-eared ogre"},{name:"Muma Pădurii",type:"Forest hag"},{name:"Vârcolac",type:"Wolf-demon"},{name:"Zmeu",type:"Giant villain"}],
+  "Saudi Arabia":[{name:"Djinn",type:"Desert spirit"},{name:"Ifrit",type:"Fire djinn"},{name:"Marid",type:"Sea djinn"},{name:"Ghoul",type:"Desert demon"},{name:"Roc",type:"Giant bird"},{name:"Hinn",type:"Low djinn"},{name:"Nasnas",type:"Half-human"},{name:"Al-Mi'raj",type:"Horned rabbit"},{name:"Shaitan",type:"Evil djinn"},{name:"Bahamut",type:"World fish"}],
+  "Canada":[{name:"Wendigo",type:"Cannibalistic spirit"},{name:"Sasquatch",type:"Hairy giant"},{name:"Thunderbird",type:"Storm eagle"},{name:"Ogopogo",type:"Lake serpent"},{name:"Loup-garou",type:"Werewolf"},{name:"Manipogo",type:"Lake monster"},{name:"Carcajou",type:"Demon wolverine"},{name:"Adlet",type:"Dog-legged creature"},{name:"Amarok",type:"Giant wolf"},{name:"Memphre",type:"Lake beast"}],
+  "Finland":[{name:"Näkki",type:"Water demon"},{name:"Hiisi",type:"Forest demon"},{name:"Metsänpeitto",type:"Forest cover spirit"},{name:"Stalo",type:"Ogre giant"},{name:"Liekkiö",type:"Ghost flame"},{name:"Menninkäinen",type:"Little gnome"},{name:"Piru",type:"Imp demon"},{name:"Maahinen",type:"Underground spirit"},{name:"Ihtiriekko",type:"Ghost child"},{name:"Vetehinen",type:"Water spirit"}],
+  "Denmark":[{name:"Nisse",type:"Farm spirit"},{name:"Mermaid",type:"Sea woman"},{name:"Ellefolk",type:"Elf folk"},{name:"Huldre",type:"Hidden folk"},{name:"Neck",type:"Water spirit"},{name:"Mara",type:"Night rider"},{name:"Skovtrolde",type:"Forest troll"},{name:"Bjergfolk",type:"Mountain folk"},{name:"Havmand",type:"Sea man"},{name:"Kirkegrim",type:"Church guardian"}],
+  "Portugal":[{name:"Moura Encantada",type:"Enchanted maiden"},{name:"Coca",type:"Sea dragon"},{name:"Homem do Saco",type:"Bag man"},{name:"Bruxas",type:"Witch bird"},{name:"Lobisomem",type:"Werewolf"},{name:"Almas Penadas",type:"Tortured souls"},{name:"Estantigua",type:"Ghost procession"},{name:"Cuca",type:"Swamp witch"},{name:"Janazahar",type:"Flower spirit"},{name:"Sereia",type:"Siren mermaid"}],
+  "Italy":[{name:"Strega",type:"Witch"},{name:"Befana",type:"Gift witch"},{name:"Maciara",type:"Evil eye caster"},{name:"Folletto",type:"Household sprite"},{name:"Orco",type:"Ogre"},{name:"Silvano",type:"Forest spirit"},{name:"Lasa",type:"Fate spirit"},{name:"Tuchulcha",type:"Underworld demon"},{name:"Vanth",type:"Death spirit"},{name:"Mefitis",type:"Sulfur goddess"}],
+  "Ukraine":[{name:"Mavka",type:"Forest nymph"},{name:"Lisovyk",type:"Forest spirit"},{name:"Rusalka",type:"Water maiden"},{name:"Domovyk",type:"House spirit"},{name:"Blud",type:"Wandering demon"},{name:"Chuhayster",type:"Forest giant"},{name:"Nyavka",type:"Undead nymph"},{name:"Potvora",type:"Monster spirit"},{name:"Likho",type:"Evil spirit"},{name:"Drekavac",type:"Screaming ghost"}],
+  "Vietnam":[{name:"Rồng",type:"Vietnamese dragon"},{name:"Cá Sấu",type:"Sacred crocodile"},{name:"Hồ Ly",type:"Fox spirit"},{name:"Ma",type:"Ghost spirit"},{name:"Người Rừng",type:"Forest man"},{name:"Thần Đèn",type:"Lamp genie"},{name:"Long Vương",type:"Dragon king"},{name:"Bạch Xà",type:"White serpent"},{name:"Kỳ Lân",type:"Unicorn lion"},{name:"Ác Quỷ",type:"Evil demon"}],
+  "South Africa":[{name:"Tokoloshe",type:"Water sprite"},{name:"Impundulu",type:"Lightning bird"},{name:"Umkhovu",type:"Zombie slave"},{name:"Inkanyamba",type:"Tornado snake"},{name:"Tikoloshe",type:"Small demon"},{name:"Mamlambo",type:"River goddess"},{name:"Groot Slang",type:"Diamond serpent"},{name:"Adze",type:"Firefly vampire"},{name:"Agogwe",type:"Little hairy man"},{name:"Ndalawo",type:"Werelion"}],
+  "New Zealand":[{name:"Taniwha",type:"Water guardian"},{name:"Patupaiarehe",type:"Fairy people"},{name:"Ponaturi",type:"Sea fairy"},{name:"Maero",type:"Wild man"},{name:"Te Kā",type:"Lava demon"},{name:"Ngārara",type:"Giant lizard"},{name:"Hine-nui-te-pō",type:"Death goddess"},{name:"Poukai",type:"Giant eagle"},{name:"Hakawai",type:"Night bird"},{name:"Mokomoko",type:"Lizard spirit"}],
+  "Ghana":[{name:"Sasabonsam",type:"Forest vampire"},{name:"Mmoatia",type:"Dwarf spirit"},{name:"Asanbosam",type:"Iron-toothed vampire"},{name:"Abonsam",type:"Evil spirit"},{name:"Anansi",type:"Spider trickster"},{name:"Sasa",type:"Ghost spirit"},{name:"Obayifo",type:"Night witch"},{name:"Duppy",type:"Spirit ghost"},{name:"Adze",type:"Firefly vampire"},{name:"Kakra",type:"Twin spirit"}],
+  "Iraq":[{name:"Pazuzu",type:"Wind demon"},{name:"Lamashtu",type:"Child demon"},{name:"Lilitu",type:"Night spirit"},{name:"Mushussu",type:"Dragon-serpent"},{name:"Anzû",type:"Storm bird"},{name:"Humbaba",type:"Forest guardian"},{name:"Asag",type:"Disease demon"},{name:"Kur",type:"Underworld beast"},{name:"Tiamat",type:"Chaos dragon"},{name:"Gallu",type:"Underworld demon"}],
+  "Morocco":[{name:"Djinn",type:"Desert spirit"},{name:"Aicha Qandicha",type:"River temptress"},{name:"Bou Regreg",type:"Water spirit"},{name:"Sahar",type:"Sorcery being"},{name:"Hamou Ukaiou",type:"Ogre villain"},{name:"Lalla Mira",type:"Possessing jinniya"},{name:"Bughul",type:"Swamp demon"},{name:"Sidi Mimoun",type:"King jinn"},{name:"Taghnja",type:"Hyena witch"},{name:"Qandisha",type:"Female jinn"}],
+  "Mongolia":[{name:"Nāts",type:"Nature spirit"},{name:"Gurvan Nokhoi",type:"Three-dog spirit"},{name:"Khangarid",type:"Sky bird"},{name:"Luu",type:"Dragon"},{name:"Chötgör",type:"Demon spirit"},{name:"Almas",type:"Wild man"},{name:"Shiree Luu",type:"Throne dragon"},{name:"Ongon",type:"Ancestral spirit"},{name:"Mangus",type:"Giant demon"},{name:"Zarlag",type:"Evil spirit"}],
+  "Venezuela":[{name:"Silbón",type:"Whistling skeleton"},{name:"Sayona",type:"Vengeful woman"},{name:"La Llorona",type:"River ghost"},{name:"Tulivieja",type:"Swamp ghost"},{name:"El Carrao",type:"Forbidden bird"},{name:"Bola de Fuego",type:"Fireball spirit"},{name:"María La Loca",type:"Wandering spirit"},{name:"Mawari",type:"Wind spirit"},{name:"Kanaima",type:"Jaguar shaman"},{name:"Yorubana",type:"River deity"}],
+  "Kenya":[{name:"Chemosit",type:"Brain-eating demon"},{name:"Mumiani",type:"Blood sucker"},{name:"Ninki Nanka",type:"River dragon"},{name:"Lukwata",type:"Lake creature"},{name:"Were",type:"Were-lion"},{name:"Mbwiri",type:"Possessing spirit"},{name:"Kaamdaan",type:"Lake beast"},{name:"Shetan",type:"Evil jinn"},{name:"Emandwa",type:"Ancestral spirit"},{name:"Aigamuxa",type:"Eye-heeled demon"}],
+  "Democratic Republic of the Congo":[{name:"Mokele-mbembe",type:"River dinosaur"},{name:"Kongamato",type:"Demon pterosaur"},{name:"Mahamba",type:"Giant crocodile"},{name:"Eloko",type:"Pygmy spirit"},{name:"Biloko",type:"Jungle dwarf"},{name:"Emela-ntouka",type:"Horn beast"},{name:"Kishi",type:"Two-faced demon"},{name:"Kasai Rex",type:"Forest tyrant"},{name:"Mbielu-Mbielu",type:"Algae lizard"},{name:"Chipfalamfula",type:"Hippo giant"}],
+  "Nepal":[{name:"Yeti",type:"Snow giant"},{name:"Rakshasa",type:"Demon warrior"},{name:"Nāga",type:"Serpent spirit"},{name:"Kumari",type:"Living goddess"},{name:"Bhairava",type:"Terror deity"},{name:"Garuda",type:"Eagle deity"},{name:"Kichkandha",type:"Headless ghost"},{name:"Pisacha",type:"Flesh eater"},{name:"Preta",type:"Hungry ghost"},{name:"Vetala",type:"Undead being"}],
+  "Israel":[{name:"Golem",type:"Clay giant"},{name:"Dybbuk",type:"Possessing spirit"},{name:"Lilith",type:"Night demon"},{name:"Shedim",type:"Devil spirit"},{name:"Ziz",type:"Sky titan"},{name:"Leviathan",type:"Sea serpent"},{name:"Behemoth",type:"Land titan"},{name:"Azazel",type:"Scapegoat demon"},{name:"Sandman",type:"Dream angel"},{name:"Ibbur",type:"Benevolent ghost"}],
+  "Pakistan":[{name:"Djinn",type:"Desert spirit"},{name:"Bhoot",type:"Wandering ghost"},{name:"Churail",type:"Vengeful spirit"},{name:"Deo",type:"Giant demon"},{name:"Pari",type:"Fairy spirit"},{name:"Shaitan",type:"Devil"},{name:"Nar Pishach",type:"Flesh eater"},{name:"Majnoon",type:"Possessed being"},{name:"Rakshasa",type:"Hindu demon"},{name:"Daayan",type:"Witch"}],
+  "Serbia":[{name:"Drekavac",type:"Screaming ghost"},{name:"Zduhać",type:"Weather wizard"},{name:"Mora",type:"Night hag"},{name:"Lamia",type:"Dragon woman"},{name:"Stopan",type:"House spirit"},{name:"Vesna",type:"Spring spirit"},{name:"Vukodlak",type:"Werewolf"},{name:"Ala",type:"Storm demon"},{name:"Stuha",type:"Ghost breath"},{name:"Karakondžula",type:"Winter demon"}],
+  "Hungary":[{name:"Táltos",type:"Shaman horse"},{name:"Lidérc",type:"Devil lover"},{name:"Szépasszony",type:"Fair lady storm"},{name:"Garabonciás",type:"Storm student"},{name:"Boszorkány",type:"Witch"},{name:"Manó",type:"Imp goblin"},{name:"Tündér",type:"Fairy being"},{name:"Sárkány",type:"Dragon"},{name:"Ördög",type:"Devil"},{name:"Vasorrú bába",type:"Iron-nosed witch"}],
+  "Netherlands":[{name:"Kabouter",type:"Gnome"},{name:"Waterwolf",type:"Lake demon"},{name:"Nachtmerrie",type:"Night mare"},{name:"Kludde",type:"Shapeshifting demon"},{name:"Redcap",type:"Murderous goblin"},{name:"Moddermannetje",type:"Mud sprite"},{name:"Aardmannetje",type:"Earth gnome"},{name:"Vliegende Hollander",type:"Ghost ship"},{name:"Bruun",type:"River troll"},{name:"Alven",type:"Water sprite"}],
+  "Tanzania":[{name:"Popobawa",type:"Bat demon"},{name:"Mzimu",type:"Ancestral spirit"},{name:"Zimwi",type:"Ogre creature"},{name:"Kibwengo",type:"Forest demon"},{name:"Shetani",type:"Evil spirit"},{name:"Nyaminyami",type:"River god"},{name:"Were-lion",type:"Shape-shifter"},{name:"Mchawi",type:"Sorcery spirit"},{name:"Mashetani",type:"Devil spirits"},{name:"Nguruwe",type:"Pig demon"}],
+  "Zimbabwe":[{name:"Tokoloshe",type:"Water sprite"},{name:"Nyaminyami",type:"River serpent"},{name:"Chikwambo",type:"Avenger spirit"},{name:"Chipunha",type:"Baboon spirit"},{name:"Mhondoro",type:"Lion spirit"},{name:"Ngozi",type:"Vengeful ghost"},{name:"Mudzimu",type:"Ancestral spirit"},{name:"Zvikwambo",type:"Possessing spirit"},{name:"Zvipamhanda",type:"Alien ghosts"},{name:"Nhova",type:"Navel spirit"}],
+};
+
+// ISO numeric → name
+const N={4:"Afghanistan",8:"Albania",12:"Algeria",24:"Angola",32:"Argentina",36:"Australia",40:"Austria",50:"Bangladesh",56:"Belgium",64:"Bhutan",68:"Bolivia",70:"Bosnia and Herzegovina",72:"Botswana",76:"Brazil",100:"Bulgaria",104:"Myanmar",116:"Cambodia",120:"Cameroon",124:"Canada",140:"Central African Republic",144:"Sri Lanka",148:"Chad",152:"Chile",156:"China",170:"Colombia",180:"Democratic Republic of the Congo",188:"Costa Rica",191:"Croatia",192:"Cuba",196:"Cyprus",203:"Czech Republic",204:"Benin",208:"Denmark",214:"Dominican Republic",218:"Ecuador",222:"El Salvador",231:"Ethiopia",232:"Eritrea",233:"Estonia",242:"Fiji",246:"Finland",250:"France",262:"Djibouti",266:"Gabon",268:"Georgia",270:"Gambia",276:"Germany",288:"Ghana",300:"Greece",320:"Guatemala",324:"Guinea",332:"Haiti",340:"Honduras",348:"Hungary",356:"India",360:"Indonesia",364:"Iran",368:"Iraq",372:"Ireland",376:"Israel",380:"Italy",388:"Jamaica",392:"Japan",398:"Kazakhstan",400:"Jordan",404:"Kenya",408:"North Korea",410:"South Korea",414:"Kuwait",418:"Laos",422:"Lebanon",426:"Lesotho",428:"Latvia",430:"Liberia",434:"Libya",438:"Liechtenstein",440:"Lithuania",442:"Luxembourg",450:"Madagascar",454:"Malawi",458:"Malaysia",466:"Mali",470:"Malta",478:"Mauritania",484:"Mexico",496:"Mongolia",499:"Montenegro",504:"Morocco",508:"Mozambique",516:"Namibia",524:"Nepal",528:"Netherlands",548:"Vanuatu",554:"New Zealand",558:"Nicaragua",562:"Niger",566:"Nigeria",578:"Norway",586:"Pakistan",591:"Panama",598:"Papua New Guinea",600:"Paraguay",604:"Peru",608:"Philippines",616:"Poland",620:"Portugal",624:"Guinea-Bissau",634:"Qatar",642:"Romania",643:"Russia",646:"Rwanda",682:"Saudi Arabia",686:"Senegal",688:"Serbia",694:"Sierra Leone",703:"Slovakia",705:"Slovenia",706:"Somalia",710:"South Africa",716:"Zimbabwe",724:"Spain",729:"Sudan",748:"Swaziland",752:"Sweden",756:"Switzerland",760:"Syria",762:"Tajikistan",764:"Thailand",768:"Togo",780:"Trinidad and Tobago",784:"United Arab Emirates",788:"Tunisia",792:"Turkey",800:"Uganda",804:"Ukraine",807:"North Macedonia",818:"Egypt",826:"United Kingdom",834:"Tanzania",840:"United States of America",854:"Burkina Faso",858:"Uruguay",860:"Uzbekistan",862:"Venezuela",887:"Yemen",894:"Zambia"};
+
+// ── SIGILS for creature types ─
+function getSigil(type){
+  const t=type.toLowerCase();
+  if(t.includes('dragon')||t.includes('serpent')||t.includes('wyrm'))return'🐉';
+  if(t.includes('wolf')||t.includes('dog')||t.includes('hound'))return'🐺';
+  if(t.includes('bird')||t.includes('eagle')||t.includes('phoenix')||t.includes('harpy'))return'🦅';
+  if(t.includes('ghost')||t.includes('spirit')||t.includes('revenant')||t.includes('undead'))return'👻';
+  if(t.includes('vampire')||t.includes('blood'))return'🧛';
+  if(t.includes('witch')||t.includes('wizard')||t.includes('sorcer'))return'🧙';
+  if(t.includes('demon')||t.includes('devil')||t.includes('djinn')||t.includes('jinn'))return'😈';
+  if(t.includes('giant')||t.includes('ogre')||t.includes('troll'))return'👹';
+  if(t.includes('mermaid')||t.includes('siren')||t.includes('sea')||t.includes('water'))return'🧜';
+  if(t.includes('fairy')||t.includes('fae')||t.includes('nymph'))return'🧚';
+  if(t.includes('fox')||t.includes('cat')||t.includes('beast'))return'🦊';
+  if(t.includes('horse'))return'🐴';
+  if(t.includes('lion')||t.includes('tiger')||t.includes('jaguar'))return'🦁';
+  if(t.includes('snake')||t.includes('serpent'))return'🐍';
+  if(t.includes('god')||t.includes('goddess')||t.includes('deity'))return'⚡';
+  return'✦';
+}
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+const listCache={}, dosCache={};
+let pinnedCountry=null, pinnedEl=null;
+let hoverTimeout, currentCountry=null;
+
+// ── DOM ───────────────────────────────────────────────────────────────────────
+const sidePanel=document.getElementById('side-panel');
+const panelCountry=document.getElementById('panel-country');
+const panelSub=document.getElementById('panel-sub');
+const crListWrap=document.getElementById('creature-list-wrap');
+const dossier=document.getElementById('dossier');
+const dosContent=document.getElementById('dossier-content');
+const dosLoading=document.getElementById('dos-loading');
+
+document.getElementById('panel-close').onclick=()=>closePanel();
+document.getElementById('dossier-close').onclick=()=>closeDossier();
+
+function closePanel(){
+  sidePanel.classList.remove('open');
+  closeDossier();
+  if(pinnedEl){pinnedEl.classed('pinned',false);pinnedEl=null;}
+  pinnedCountry=null;
+}
+function closeDossier(){
+  dossier.classList.remove('open');
+  document.querySelectorAll('.creature-btn').forEach(b=>b.classList.remove('selected'));
+}
+
+// ── MAP SETUP ─────────────────────────────────────────────────────────────────
+const W=window.innerWidth, H=window.innerHeight;
+const svg=d3.select('#map-svg').attr('width',W).attr('height',H);
+const proj=d3.geoNaturalEarth1().scale((W/640)*100).translate([W/2,H/2]);
+const pathGen=d3.geoPath().projection(proj);
+
+const defs=svg.append('defs');
+const og=defs.append('radialGradient').attr('id','og').attr('cx','50%').attr('cy','50%').attr('r','65%');
+og.append('stop').attr('offset','0%').attr('stop-color','#112236');
+og.append('stop').attr('offset','100%').attr('stop-color','#050e18');
+
+svg.append('path').datum({type:'Sphere'}).attr('d',pathGen).attr('fill','url(#og)');
+svg.append('path').datum(d3.geoGraticule()()).attr('class','graticule').attr('d',pathGen);
+svg.append('path').datum({type:'Sphere'}).attr('class','sphere-border').attr('d',pathGen);
+
+const zoom=d3.zoom().scaleExtent([1,14]).on('zoom',e=>{
+  g.attr('transform',e.transform);
+  g.selectAll('.country').attr('stroke-width',0.4/e.transform.k);
+});
+svg.call(zoom);
+document.getElementById('zi').onclick=()=>svg.transition().duration(300).call(zoom.scaleBy,1.6);
+document.getElementById('zo').onclick=()=>svg.transition().duration(300).call(zoom.scaleBy,0.625);
+document.getElementById('reset-btn').onclick=()=>svg.transition().duration(700).call(zoom.transform,d3.zoomIdentity);
+
+const g=svg.append('g');
+
+// Show pin hint briefly
+setTimeout(()=>{
+  const h=document.getElementById('pin-hint');
+  h.classList.add('show');
+  setTimeout(()=>h.classList.remove('show'),3000);
+},2500);
+
+fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
+  .then(r=>r.json())
+  .then(world=>{
+    const features=topojson.feature(world,world.objects.countries).features;
+    g.selectAll('.country')
+      .data(features).join('path')
+      .attr('class','country')
+      .attr('d',pathGen)
+      .attr('data-name',d=>N[+d.id]||'')
+      .on('mouseenter',function(event,d){
+        const name=N[+d.id]; if(!name||pinnedCountry) return;
+        clearTimeout(hoverTimeout);
+        d3.select(this).classed('hovered',true);
+        hoverTimeout=setTimeout(()=>openPanel(name,d3.select(this),false),120);
+      })
+      .on('mouseleave',function(){
+        if(pinnedCountry) return;
+        clearTimeout(hoverTimeout);
+        d3.select(this).classed('hovered',false);
+        // don't close panel on mouseleave — only close when another country hovered
+      })
+      .on('click',function(event,d){
+        event.stopPropagation();
+        const name=N[+d.id]; if(!name) return;
+        // unpin previous
+        if(pinnedEl) pinnedEl.classed('pinned',false).classed('hovered',false);
+        if(pinnedCountry===name){
+          // toggle off
+          pinnedCountry=null; pinnedEl=null;
+          closePanel(); return;
+        }
+        pinnedCountry=name;
+        pinnedEl=d3.select(this);
+        pinnedEl.classed('hovered',false).classed('pinned',true);
+        closeDossier();
+        openPanel(name,pinnedEl,true);
+      });
+
+    // clicking ocean unpins
+    svg.on('click',()=>{
+      if(pinnedCountry){ closePanel(); }
+    });
+
+    setTimeout(()=>{
+      const s=document.getElementById('splash');
+      s.classList.add('gone');
+      setTimeout(()=>s.remove(),900);
+    },350);
+  })
+  .catch(()=>{
+    document.getElementById('splash').innerHTML='<h2 style="color:#c8912a">Map failed to load</h2><p style="color:#b9a07a">Check your internet connection</p>';
+  });
+
+// ── PANEL LOGIC ───────────────────────────────────────────────────────────────
+function openPanel(name, el, pinned){
+  currentCountry=name;
+  panelCountry.textContent=name;
+  panelSub.textContent=pinned?'Click a creature for its dossier':'Legendary inhabitants';
+  sidePanel.classList.add('open');
+  crListWrap.innerHTML='<div class="ldots"><span></span><span></span><span></span></div>';
+  if(listCache[name]){renderList(listCache[name]);}
+  else fetchList(name);
+}
+
+function renderList(creatures){
+  crListWrap.innerHTML='';
+  creatures.forEach((c,i)=>{
+    const btn=document.createElement('button');
+    btn.className='creature-btn';
+    btn.style.animationDelay=(i*35)+'ms';
+    btn.innerHTML=`<span class="cb-num">${String(i+1).padStart(2,'0')}</span><span class="cb-info"><span class="cb-name">${c.name}</span><span class="cb-type">${c.type}</span></span><span class="cb-arrow">›</span>`;
+    btn.onclick=(e)=>{ e.stopPropagation(); selectCreature(c, btn); };
+    crListWrap.appendChild(btn);
+  });
+}
+
+async function fetchList(name){
+  const local=LOCAL[name];
+  if(local){listCache[name]=local;renderList(local);return;}
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,
+        system:'Return ONLY a valid JSON array, no markdown. Exactly 10 items: [{"name":"string","type":"2-3 word descriptor"}]',
+        messages:[{role:'user',content:`Top 10 mythical creatures from ${name} folklore`}]
+      })
+    });
+    const data=await r.json();
+    const txt=(data.content?.[0]?.text||'[]').replace(/```json|```/g,'').trim();
+    const list=JSON.parse(txt);
+    listCache[name]=list; renderList(list);
+  }catch{
+    crListWrap.innerHTML='<p style="color:var(--aged);font-style:italic;padding:16px;font-size:0.8rem;text-align:center">Records lost to time…</p>';
+  }
+}
+
+// ── DOSSIER LOGIC ─────────────────────────────────────────────────────────────
+function selectCreature(creature, btnEl){
+  document.querySelectorAll('.creature-btn').forEach(b=>b.classList.remove('selected'));
+  btnEl.classList.add('selected');
+  dossier.classList.add('open');
+  dosContent.innerHTML='';
+  dosLoading.style.display='flex';
+  if(dosCache[creature.name]){dosLoading.style.display='none';renderDossier(dosCache[creature.name]);return;}
+  fetchDossier(creature, currentCountry);
+}
+
+async function fetchDossier(creature, country){
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1200,
+        system:`You are a mythological archivist. Return ONLY valid JSON, no markdown. Schema:
+{
+  "sigil": "single relevant emoji",
+  "origin": "brief origin region/culture (max 6 words)",
+  "appearance": "2-3 sentence vivid physical description",
+  "nature": "benevolent | malevolent | trickster | neutral | divine",
+  "habitat": "where it dwells (max 8 words)",
+  "lore": "2-3 sentence backstory or most famous myth",
+  "abilities": ["ability1","ability2","ability3","ability4"],
+  "weaknesses": ["weakness1","weakness2"],
+  "strengths": ["strength1","strength2"],
+  "threat": 1-5 (integer, danger level to humans),
+  "quote": "A short evocative line from folklore or an invented atmospheric quote about this creature (max 20 words)"
+  "stats": { "power": 1-100, "cunning": 1-100, "stealth": 1-100, "fear": 1-100, "magic": 1-100 }
+}`,
+        messages:[{role:'user',content:`Creature: ${creature.name} (${creature.type}) from ${country} mythology`}]
+      })
+    });
+    const data=await r.json();
+    const txt=(data.content?.[0]?.text||'{}').replace(/```json|```/g,'').trim();
+    const info=JSON.parse(txt);
+    info._name=creature.name; info._type=creature.type;
+    dosCache[creature.name]=info;
+    dosLoading.style.display='none';
+    renderDossier(info);
+  }catch(err){
+    dosLoading.style.display='none';
+    dosContent.innerHTML='<p style="color:var(--aged);font-style:italic;padding:20px;text-align:center">The records are sealed…</p>';
+  }
+}
+
+function renderDossier(d){
+  const threatSkulls=Array.from({length:5},(_,i)=>`<span class="skull${i<(d.threat||3)?' lit':''}" title="Threat ${d.threat}/5">☠</span>`).join('');
+  const stats=d.stats||{power:50,cunning:50,stealth:50,fear:50,magic:50};
+  const statRows=Object.entries(stats).map(([k,v])=>`
+    <div class="stat-row">
+      <span class="stat-label">${k}</span>
+      <div class="stat-bar-wrap"><div class="stat-bar" data-val="${v}" style="width:0%"></div></div>
+      <span class="stat-val">${v}</span>
+    </div>`).join('');
+  const abilities=(d.abilities||[]).map(a=>`<span class="ability-tag">${a}</span>`).join('');
+  const weaknesses=(d.weaknesses||[]).map(w=>`<span class="chip w">${w}</span>`).join('');
+  const strengths=(d.strengths||[]).map(s=>`<span class="chip s">${s}</span>`).join('');
+  const natureBadge={benevolent:'#6aab72',malevolent:'#c47060',trickster:'#c8912a',neutral:'#b9a07a',divine:'#a0b8d8'}[d.nature]||'#b9a07a';
+
+  dosContent.innerHTML=`
+    <div class="d-sigil">${d.sigil||getSigil(d._type||'')}</div>
+    <div class="d-name">${d._name||'Unknown'}</div>
+    <div class="d-type">${d._type||''}</div>
+    <div class="d-origin-badge">
+      <span style="color:${natureBadge};text-transform:capitalize">${d.nature||'unknown'}</span>
+      <span style="opacity:0.4">·</span>
+      <span>${d.origin||country}</span>
+    </div>
+
+    ${d.quote?`<div class="d-quote">"${d.quote}"</div>`:''}
+
+    <div class="d-section">
+      <div class="d-section-title">Attributes</div>
+      <div class="d-stats">${statRows}</div>
+    </div>
+
+    <div class="d-section">
+      <div class="d-section-title">Appearance</div>
+      <p class="d-text">${d.appearance||'Appearance unknown.'}</p>
+    </div>
+
+    <div class="d-section">
+      <div class="d-section-title">Habitat</div>
+      <p class="d-text">${d.habitat||'Unknown.'}</p>
+    </div>
+
+    <div class="d-section">
+      <div class="d-section-title">Lore</div>
+      <p class="d-text">${d.lore||'No records found.'}</p>
+    </div>
+
+    <div class="d-section">
+      <div class="d-section-title">Abilities</div>
+      <div class="ability-tags">${abilities||'<span class="ability-tag">Unknown</span>'}</div>
+    </div>
+
+    <div class="d-section">
+      <div class="d-section-title">Strengths</div>
+      <div class="chip-row">${strengths||'<span class="chip s">Unknown</span>'}</div>
+    </div>
+
+    <div class="d-section">
+      <div class="d-section-title">Weaknesses</div>
+      <div class="chip-row">${weaknesses||'<span class="chip w">Unknown</span>'}</div>
+    </div>
+
+    <div class="d-section">
+      <div class="d-section-title">Threat Level</div>
+      <div class="threat-wrap">
+        <div class="threat-skulls">${threatSkulls}</div>
+        <span class="threat-label">${['Harmless','Cautious','Dangerous','Deadly','Apocalyptic'][Math.min((d.threat||3)-1,4)]}</span>
+      </div>
+    </div>
+  `;
+
+  // animate stat bars
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      dosContent.querySelectorAll('.stat-bar').forEach(bar=>{
+        const v=parseInt(bar.dataset.val)||0;
+        bar.style.width=v+'%';
+      });
+    });
+  });
+}
+
+window.addEventListener('resize',()=>{
+  const W2=window.innerWidth,H2=window.innerHeight;
+  svg.attr('width',W2).attr('height',H2);
+  proj.translate([W2/2,H2/2]);
+  g.selectAll('.country').attr('d',pathGen);
+  svg.select('.graticule').attr('d',pathGen);
+  svg.selectAll('path[fill="url(#og)"],.sphere-border').attr('d',pathGen);
+});
+</script>
+</body>
+</html>
